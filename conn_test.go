@@ -41,7 +41,6 @@ func TestNewConn(t *testing.T) {
 			net:  "udp",
 			mode: ModeOctet,
 			addr: addr,
-			listenPort: 0,
 
 			expectedAddr: addr,
 			expectedMode: ModeOctet,
@@ -62,7 +61,6 @@ func TestNewConn(t *testing.T) {
 			net:  "udp7",
 			mode: ModeOctet,
 			addr: addr,
-			listenPort: 0,
 
 			expectedError: "listen udp7 :0: unknown network udp7",
 		},

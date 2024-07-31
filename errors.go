@@ -37,6 +37,8 @@ var (
 	ErrInvalidMode = errors.New("invalid transfer mode: must be ModeNetASCII or ModeOctet")
 	// ErrInvalidRetransmit indicates that the retransmit limit was configured with a negative value.
 	ErrInvalidRetransmit = errors.New("invalid retransmit: cannot be negative")
+	// ErrInvalidListenPort indicates that the listen porutside the range 1 to 65535 was configured.
+	ErrInvalidListenPort = errors.New("invalid listen port: must be between 1 and 65535")
 	// ErrMaxRetries indicates that the maximum number of retries has been reached.
 	ErrMaxRetries = errors.New("max retries reached")
 )

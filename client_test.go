@@ -39,6 +39,7 @@ func TestNewClient(t *testing.T) {
 		expectedOpts       map[string]string
 		expectedMode       TransferMode
 		expectedRetransmit int
+		expectedListenPort int
 	}{
 		{
 			name:               "default",
@@ -112,6 +113,15 @@ func TestNewClient(t *testing.T) {
 			expectedOpts:       defaultOpts,
 			expectedMode:       ModeOctet,
 			expectedRetransmit: 13,
+		},
+		{
+			name: "listen port",
+			opts: []ClientOpt{ClientListenPort(8080)},
+
+			expectedOpts:       defaultOpts,
+			expectedMode:       ModeOctet,
+			expectedRetransmit: 10,
+			expectedListenPort: 8080,
 		},
 		{
 			name: "two opts",
@@ -220,6 +230,11 @@ func TestNewClient(t *testing.T) {
 			// Retransmit
 			if client.retransmit != c.expectedRetransmit {
 				t.Errorf("expected retransmit to be %d, but it was %d", c.expectedRetransmit, client.retransmit)
+			}
+
+			// Listen port
+			if c.expectedListenPort != 0 && client.listenPort != c.expectedListenPort {
+                t.Errorf("expected listen port to be %d, but it was %d", c.expectedListenPort, client.listenPort)
 			}
 		})
 	}

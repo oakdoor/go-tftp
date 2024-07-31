@@ -20,7 +20,8 @@ type Client struct {
 	mode TransferMode      // TFTP transfer mode
 	opts map[string]string // Map of TFTP options (RFC2347)
 
-	retransmit int // Per-packet retransmission limit
+	retransmit int         // Per-packet retransmission limit
+	listenPort int         // Port to listen for server response on
 }
 
 // NewClient returns a configured Client.
@@ -61,7 +62,7 @@ func (c *Client) Get(url string) (*Response, error) {
 	}
 
 	// Create connection
-	conn, err := newConnFromHost(c.net, c.mode, u.host, 0)
+	conn, err := newConnFromHost(c.net, c.mode, u.host, c.listenPort)
     if err != nil {
 		return nil, err
 	}
@@ -87,7 +88,7 @@ func (c *Client) Put(url string, r io.Reader, size int64) (err error) {
 	}
 
 	// Create connection
-	conn, err := newConnFromHost(c.net, c.mode, u.host, 0)
+	conn, err := newConnFromHost(c.net, c.mode, u.host, c.listenPort)
 	if err != nil {
 		return err
 	}
@@ -281,6 +282,19 @@ func ClientRetransmit(i int) ClientOpt {
 			return ErrInvalidRetransmit
 		}
 		c.retransmit = i
+		return nil
+	}
+}
+
+// ClientListenPort configures the listening port for packets from the server for all requests.
+//
+// Default: 0 (which will assign an ephemeral port).
+func ClientListenPort(port int) ClientOpt {
+	return func(c *Client) error {
+		if port < 0 || port > 665535 {
+			return ErrInvalidListenPort
+		}
+		c.listenPort = port
 		return nil
 	}
 }
