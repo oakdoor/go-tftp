@@ -537,66 +537,69 @@ func (c *conn) readData() stateType {
 
 // ackData handles block sequence, windowing, and acknowledgements
 func (c *conn) ackData() stateType {
+    c.log.trace("ackData diff: %d, current block: %d, rx block %d", c.rx.block() - c.block, c.block, c.rx.block())
 	switch diff := c.rx.block() - c.block; {
-	case diff == 1:
-		// Next block as expected; increment window and block
-		c.log.trace("ackData diff: %d, current block: %d, rx block %d", diff, c.block, c.rx.block())
-		c.block++
-		c.window++
-		c.catchup = false
+	case diff < 0:
+	    // Server is resending a bunch of things: it must have missed our ACK.
+	    // Ignore until caught up.
+	    return c.read
 	case diff == 0:
-		// Same block again, ignore
-		c.log.trace("ackData diff: %d, current block: %d, rx block %d", diff, c.block, c.rx.block())
-		return c.read
-	case diff > c.windowsize:
-		c.log.trace("ackData diff: %d, current block: %d, rx block %d", diff, c.block, c.rx.block())
-		// Sender is behind, missed ACK? Wait for catchup
-		return c.read
+		// Server sent the same block again: it must have missed our ACK.
+		// It resent all the blocks (which we ignored) but we are now (almost) caught back up.
+		// Re-send the ACK so we can carry on from here as a new window.
+		return c.sendWindowAck()
+	case diff == 1:
+        // Next block as expected
+        return c.bufferAndAckData()
 	case diff <= c.windowsize:
-		c.log.trace("ackData diff: %d, current block: %d, rx block %d", diff, c.block, c.rx.block())
 		// We missed blocks
 		if c.catchup {
 			// Ignore, we need to catchup with server
 			return c.read
 		}
-		// ACK previous block, reset window, and return sequnce error
 		c.log.debug("Missing blocks between %d and %d. Resetting to block %d", c.block, c.rx.block(), c.block)
-		if err := c.sendAck(c.block); err != nil {
-			c.err = wrapError(err, "sending missed block(s) ACK")
-			return nil
-		}
-		c.window = 0
 		c.catchup = true
-		return c.read
+		return c.sendWindowAck()
+    default:
+        // We are more than a windowsize behind, which should never happen. Just try and catchup.
+        return c.read
 	}
+}
 
-	// Add data to buffer
-	n, err := c.rxBuf.Write(c.rx.data())
-	if err != nil {
-		c.err = wrapError(err, "writing to rxBuf after read")
-		return nil
-	}
+func (c *conn) bufferAndAckData() stateType {
+    c.block++
+    c.window++
+    c.catchup = false
 
-	if n < int(c.blksize) {
-		// Reveived last DATA, we're done
-		c.done = true
-	}
+    // Add data to buffer
+    n, err := c.rxBuf.Write(c.rx.data())
+    if err != nil {
+        c.err = wrapError(err, "writing to rxBuf after read")
+        return nil
+    }
 
-	if c.window < c.windowsize && n >= int(c.blksize) {
-		// We haven't reached the window
-		return c.read
-	}
+    if n < int(c.blksize) {
+        // Received last DATA, we're done
+        c.done = true
+    }
 
-	// Reached the windowsize or final data, send ACK and reset window
-	c.log.trace("window %d, windowsize: %d, offset: %d, blksize: %d", c.window, c.windowsize, c.rx.offset, c.blksize)
-	c.window = 0
-	c.log.trace("Window %d reached, sending ACK for %d\n", c.windowsize, c.block)
-	if err := c.sendAck(c.block); err != nil {
-		c.err = wrapError(err, "sending DATA ACK")
-		return nil
-	}
+    if c.window < c.windowsize && n >= int(c.blksize) {
+        // We haven't reached the window
+        return c.read
+    }
 
-	return c.read
+    c.log.trace("Window %d reached, sending ACK for %d\n", c.windowsize, c.block)
+    return c.sendWindowAck()
+}
+
+func (c *conn) sendWindowAck() stateType {
+    c.log.trace("sending ACK and resetting window at window %d, windowsize: %d, offset: %d, blksize: %d", c.window, c.windowsize, c.rx.offset, c.blksize)
+    c.window = 0
+    if err := c.sendAck(c.block); err != nil {
+        c.err = wrapError(err, "sending DATA ACK")
+        return nil
+    }
+    return c.read
 }
 
 // Close flushes any remaining data to be transferred and closes netConn

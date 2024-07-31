@@ -937,8 +937,24 @@ func TestConn_ackData(t *testing.T) {
 			}(),
 
 			expectedBlock:  12,
-			expectedWindow: 1,
+			expectedWindow: 0,
 			expectedError:  errBlockSequence.Error(),
+		},
+		{
+			name:       "server resending; ignore",
+			timeout:    time.Second,
+			block:      12,
+			windowsize: 2,
+			window:     1,
+			rx: func() datagram {
+				dg := datagram{}
+				dg.writeData(10, data[:512])
+				return dg
+			}(),
+
+			expectedBlock:  12,
+			expectedWindow: 1,
+			expectedError:  "^$",
 		},
 		{
 			name:       "future block, no catchup",
@@ -1087,6 +1103,7 @@ func TestConn_ackData(t *testing.T) {
 			if tConn.window != c.expectedWindow {
 				t.Errorf("expected window %d, got %d", c.expectedWindow, tConn.window)
 			}
+
 			// Catchup
 			if tConn.catchup != c.expectCatchup {
 				t.Errorf("expected catchup %t, but it wasn't", c.expectCatchup)
