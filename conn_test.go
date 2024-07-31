@@ -25,29 +25,44 @@ func TestNewConn(t *testing.T) {
 	}
 
 	cases := []struct {
-		name string
-		net  string
-		mode TransferMode
-		addr *net.UDPAddr
+		name        string
+		net         string
+		mode        TransferMode
+		addr        *net.UDPAddr
+		listenPort  int
 
-		expectedAddr  *net.UDPAddr
-		expectedMode  TransferMode
-		expectedError string
+		expectedAddr        *net.UDPAddr
+		expectedMode        TransferMode
+		expectedListenPort  int
+		expectedError       string
 	}{
 		{
-			name: "success",
+			name: "success on ephemeral port",
 			net:  "udp",
 			mode: ModeOctet,
 			addr: addr,
+			listenPort: 0,
 
 			expectedAddr: addr,
 			expectedMode: ModeOctet,
+		},
+		{
+			name: "success on specified port",
+			net:  "udp",
+			mode: ModeOctet,
+			addr: addr,
+			listenPort: 8080,
+
+			expectedAddr: addr,
+			expectedMode: ModeOctet,
+		    expectedListenPort:  8080,
 		},
 		{
 			name: "error",
 			net:  "udp7",
 			mode: ModeOctet,
 			addr: addr,
+			listenPort: 0,
 
 			expectedError: "listen udp7 :0: unknown network udp7",
 		},
@@ -55,7 +70,7 @@ func TestNewConn(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			conn, err := newConn(c.net, c.mode, c.addr)
+			conn, err := newConn(c.net, c.mode, c.addr, c.listenPort)
 
 			// Errorf
 			if err != nil && ErrorCause(err).Error() != c.expectedError {
@@ -74,6 +89,18 @@ func TestNewConn(t *testing.T) {
 			if c.expectedMode != conn.mode {
 				t.Errorf("expected mode %q, but it was %q", c.expectedMode, conn.mode)
 			}
+
+			listenPort, err := addrPort(conn.netConn.LocalAddr())
+			if err != nil {
+			    t.Errorf("not a UDP listen port");
+			    return
+			}
+
+            // Listen Port
+            if c.expectedListenPort != 0 && c.expectedListenPort != listenPort {
+                t.Errorf("expected listen port %#v, but it was %#v", c.expectedListenPort, listenPort)
+            }
+
 			conn.Close()
 
 			// Defaults
@@ -94,6 +121,16 @@ func TestNewConn(t *testing.T) {
 			}
 		})
 	}
+}
+
+func addrPort(address net.Addr) (int, error) {
+
+    switch addr := address.(type) {
+    case *net.UDPAddr:
+        return int(addr.Port), nil
+    default:
+        return 0, errors.New("not a UDP address")
+    }
 }
 
 func testWriteConn(t *testing.T, conn *net.UDPConn, addr *net.UDPAddr, dg datagram) error {
@@ -1816,7 +1853,7 @@ func testConns(t *testing.T) (*conn, *net.UDPAddr, *net.UDPConn, func()) {
 		t.Fatal(err)
 	}
 
-	tConn, err := newConn("udp4", ModeOctet, cAddr)
+	tConn, err := newConn("udp4", ModeOctet, cAddr, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

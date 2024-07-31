@@ -34,9 +34,9 @@ var defaultOptions = map[string]string{
 //
 // udpNet is one of "udp", "udp4", or "udp6"
 // addr is the address of the target client or server
-func newConn(udpNet string, mode TransferMode, addr *net.UDPAddr) (*conn, error) {
+func newConn(udpNet string, mode TransferMode, addr *net.UDPAddr, listenPort int) (*conn, error) {
 	// Start listening, an empty UDPAddr will cause the system to assign a port
-	netConn, err := net.ListenUDP(udpNet, &net.UDPAddr{})
+	netConn, err := net.ListenUDP(udpNet, &net.UDPAddr{Port: listenPort})
 	if err != nil {
 		return nil, wrapError(err, "network listen failed")
 	}
@@ -74,14 +74,14 @@ func newSinglePortConn(addr *net.UDPAddr, mode TransferMode, netConn *net.UDPCon
 // newConnFromHost wraps newConn and looks up the target's address from a string
 //
 // This function is used by Client
-func newConnFromHost(udpNet string, mode TransferMode, host string) (*conn, error) {
+func newConnFromHost(udpNet string, mode TransferMode, host string, listenPort int) (*conn, error) {
 	// Resolve server
 	addr, err := net.ResolveUDPAddr(udpNet, host)
 	if err != nil {
 		return nil, wrapError(err, "address resolve failed")
 	}
 
-	return newConn(udpNet, mode, addr)
+	return newConn(udpNet, mode, addr, listenPort)
 }
 
 // conn handles TFTP read and write requests

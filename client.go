@@ -61,7 +61,7 @@ func (c *Client) Get(url string) (*Response, error) {
 	}
 
 	// Create connection
-	conn, err := newConnFromHost(c.net, c.mode, u.host)
+	conn, err := newConnFromHost(c.net, c.mode, u.host, 0)
     if err != nil {
 		return nil, err
 	}
@@ -87,7 +87,7 @@ func (c *Client) Put(url string, r io.Reader, size int64) (err error) {
 	}
 
 	// Create connection
-	conn, err := newConnFromHost(c.net, c.mode, u.host)
+	conn, err := newConnFromHost(c.net, c.mode, u.host, 0)
 	if err != nil {
 		return err
 	}

@@ -266,7 +266,7 @@ func (s *Server) newConn(req *request, reqChan chan []byte) (*conn, func() error
 	if s.singlePort {
 		c = newSinglePortConn(req.addr, dg.mode(), s.conn, reqChan)
 	} else {
-		c, err = newConn(s.net, dg.mode(), req.addr) // Use empty mode until request has been parsed.
+		c, err = newConn(s.net, dg.mode(), req.addr, 0) // Use empty mode until request has been parsed.
 		if err != nil {
 			s.log.err("Received error opening connection for new request: %v", err)
 			return nil, nil, err
