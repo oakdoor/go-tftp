@@ -62,7 +62,7 @@ func (c *Client) Get(url string) (*Response, error) {
 
 	// Create connection
 	conn, err := newConnFromHost(c.net, c.mode, u.host)
-	if err != nil {
+    if err != nil {
 		return nil, err
 	}
 

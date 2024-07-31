@@ -18,6 +18,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"net/url"
 )
 
 func TestMain(m *testing.M) {
@@ -418,7 +419,7 @@ func TestClient_Get(t *testing.T) {
 		},
 		{
 			name: "bad url",
-			url:  "host:#host#:#port#/file",
+			url:  "#host#:#port#/file",
 
 			expectedError: "invalid host/IP",
 		},
@@ -490,7 +491,7 @@ func TestClient_Get(t *testing.T) {
 				}
 
 				// Data
-				if !reflect.DeepEqual(response, c.expectedResponse) {
+				if response != nil && c.expectedResponse != nil && !reflect.DeepEqual(response, c.expectedResponse) {
 					if len(response) > 1000 || len(c.expectedResponse) > 1000 {
 						t.Errorf("response didn't match (over 1000 characters, omitting)")
 					} else {
@@ -702,7 +703,7 @@ func TestClient_Put(t *testing.T) {
 		},
 		{
 			name: "bad url",
-			url:  "host:#host#:#port#/file",
+			url:  "/file",
 
 			expectedError: "invalid host/IP",
 		},
@@ -895,13 +896,18 @@ func TestClient_parseURL(t *testing.T) {
 			name: "port is not numeric",
 			url:  "host:a/file",
 
-			expectedError: ErrInvalidHostIP,
+			expectedError: &url.Error {
+			    "parse",
+			    "tftp://host:a/file",
+                 fmt.Errorf("invalid port \":a\" after host"),
+			},
 		},
 		{
 			name: "colons in hostname",
-			url:  "my:host:a/file",
+			url:  "my:host:69/file",
 
-			expectedError: ErrInvalidHostIP,
+			expectedHost: "[my:host]:69",
+			expectedFile: "file",
 		},
 	}
 
@@ -910,8 +916,14 @@ func TestClient_parseURL(t *testing.T) {
 			u, err := parseURL(c.url)
 
 			// Error
-			if err != c.expectedError {
-				t.Errorf("expected error %v, got %v", c.expectedError, err)
+			if err == nil || c.expectedError == nil {
+			    if err != c.expectedError {
+                    t.Errorf("expected error '%v', got '%v'", c.expectedError, err)
+                }
+			} else {
+			    if err.Error() != c.expectedError.Error() {
+				    t.Errorf("expected error '%v', got '%v'", c.expectedError, err)
+                }
 			}
 
 			if err != nil {
