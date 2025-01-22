@@ -1036,12 +1036,12 @@ func TestConn_ackData(t *testing.T) {
 				conn.SetReadDeadline(time.Now().Add(testConnTimeout))
 				_, _, err := conn.ReadFrom(tDG.buf)
 				if err != nil {
-					t.Errorf("future block, no catchup: expected ACK %v", err)
+					t.Errorf("future block, rollover: expected ACK %v", err)
 					return nil
 				}
 
 				if tDG.block() != 65534 {
-					t.Errorf("future block, no catchup: expected ACK with block 65534, got %d", tDG.block())
+					t.Errorf("future block, rollover: expected ACK with block 65534, got %d", tDG.block())
 				}
 				return nil
 			},

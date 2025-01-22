@@ -537,18 +537,24 @@ func (c *conn) readData() stateType {
 
 // ackData handles block sequence, windowing, and acknowledgements
 func (c *conn) ackData() stateType {
-    c.log.trace("ackData diff: %d, current block: %d, rx block %d", c.rx.block() - c.block, c.block, c.rx.block())
-	switch diff := int64(c.rx.block()) - int64(c.block); {
-	case diff < 0:
-	    c.log.debug("Server resent block %d, it must have missed our ACK, ignoring until caught up", c.rx.block())
-	    return c.read
+    c.log.trace("ackData: current block: %d, rx block %d", c.block, c.rx.block())
+
+    relative_diff := int64(c.rx.block()) - int64(c.block)
+    rollover_diff := c.rx.block() - c.block
+
+    if relative_diff < 0 && rollover_diff > c.windowsize {
+        c.log.debug("Server resent block %d, it must have missed our ACK, ignoring until caught up", c.rx.block())
+        return c.read
+    }
+
+	switch diff := rollover_diff; {
 	case diff == 0:
         c.log.debug("Server resent current block %d, it must have missed our ACK, but is now caught up", c.block)
 		return c.sendWindowAck()
 	case diff == 1:
         // Next block as expected
         return c.bufferAndAckData()
-	case diff <= int64(c.windowsize):
+	case diff <= c.windowsize:
 		// We missed blocks
 		if c.catchup {
 			// Ignore, we need to catchup with server
