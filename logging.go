@@ -14,7 +14,7 @@ var (
 	trace bool
 )
 
-func init() {
+func Init() {
 	if os.Getenv("TFTP_DEBUG") != "" {
 		debug = true
 	}
