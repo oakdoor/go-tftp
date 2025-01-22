@@ -184,7 +184,7 @@ func (c *conn) receiveResponse() stateType {
 
 	addr, err := c.readFromNet()
 	if err != nil {
-		c.log.debug("error getting %s response from %v", c.tx.opcode(), c.remoteAddr)
+		c.log.debug("error getting response from %v: %s", c.remoteAddr, err)
 		c.err = err
 		return c.receiveResponse
 	}
