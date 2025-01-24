@@ -5,4 +5,4 @@
 /*
 Package tftp provides TFTP client and server implementations.
 */
-package tftp // import "pack.ag/tftp"
+package tftp

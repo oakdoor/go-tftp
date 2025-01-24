@@ -1,18 +1,10 @@
-# **pack.ag/tftp**
+# **github.com/oakdoor/go-tftp**
 
-[![Go Report Card](https://goreportcard.com/badge/vcabbage/go-tftp)](https://goreportcard.com/report/vcabbage/go-tftp)
-[![Coverage Status](https://coveralls.io/repos/github/vcabbage/go-tftp/badge.svg?branch=master)](https://coveralls.io/github/vcabbage/go-tftp?branch=master)
-[![Build Status](https://travis-ci.org/vcabbage/go-tftp.svg?branch=master)](https://travis-ci.org/vcabbage/go-tftp)
-[![Build status](https://ci.appveyor.com/api/projects/status/0sxw1t6jjoe4yc9p/branch/master?svg=true)](https://ci.appveyor.com/project/vCabbage/trivialt/branch/master)
-[![GoDoc](https://godoc.org/pack.ag/tftp?status.svg)](http://godoc.org/pack.ag/tftp)
-[![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/vcabbage/go-tftp/master/LICENSE)
+This is a fork of [pack.ag/tftp](https://github.com/vcabbage/go-tftp), a cross-platform, concurrent TFTP client and server implementation written in Go.
 
+This fork adds CLI client and server applications, and unique quality of life features.
 
-pack.ag/tftp is a cross-platform, concurrent TFTP client and server implementation for Go.
-
-
-### Standards Implemented
-
+### Standards implemented
 - [X] Binary Transfer ([RFC 1350](https://tools.ietf.org/html/rfc1350))
 - [X] Netascii Transfer ([RFC 1350](https://tools.ietf.org/html/rfc1350))
 - [X] Option Extension ([RFC 2347](https://tools.ietf.org/html/rfc2347))
@@ -21,9 +13,8 @@ pack.ag/tftp is a cross-platform, concurrent TFTP client and server implementati
 - [X] Transfer Size Option ([RFC 2349](https://tools.ietf.org/html/rfc2349))
 - [X] Windowsize Option ([RFC 7440](https://tools.ietf.org/html/rfc7440))
 
-### Unique Features
-
-- __Single Port Mode__
+### Unique features of this fork
+- __Single Port Mode for the TFTP Client__
 
     TL;DR: It allows TFTP to work through firewalls.
 
@@ -37,21 +28,57 @@ pack.ag/tftp is a cross-platform, concurrent TFTP client and server implementati
     
     Of course if the firewall in question is configured to block TFTP connections, this setting won't help you.
     
-    Enable single port mode with the `--single-port` flag. This is currently marked experimental as is diverges from the TFTP standard.
+    Enable single port mode with the `--single-port` flag. This is currently marked experimental as it diverges from the TFTP standard.
 
-## Installation
+## Licenses
+This is a fork of [pack.ag/tftp](https://github.com/vcabbage/go-tftp) which is licensed under MIT, retained in [LICENSE](LICENSE).
 
+## Building client and server applications
+
+### Dependencies
+Install Go following these [instructions](https://go.dev/doc/install).
+
+### Build commands
+```bash
+go build -o tftp-client cmd/tftp-client/main.go
 ```
-go get -u pack.ag/tftp
+```bash
+go build -o tftp-server cmd/tftp-server/main.go
 ```
 
-## API
+### Usage
 
-The API was inspired by Go's well-known net/http API. If you can write a net/http handler or middleware, you should have no problem doing the same with pack.ag/tftp.
+```bash
+./tftp-client --help
+```
+```bash
+./tftp-server --help
+```
 
-### Configuration Functions
+### Examples
 
-One area that is noticeably different from net/http is the configuration of clients and servers. pack.ag/tftp uses "configuration functions" rather than the direct modification of the
+```bash
+./tftp-server --output-folder output/ --port 69
+```
+```bash
+./tftp-client --file test_file --windowsize 64 --blocksize 1408 tftp://0.0.0.0/test_file
+```
+
+## The tftp package
+
+### Installing
+
+```bash
+go get -u github.com/oakdoor/go-tftp/tftp
+```
+
+### API
+
+The API was inspired by Go's well-known net/http API. If you can write a net/http handler or middleware, you should have no problem doing the same with the tftp package.
+
+#### Configuration functions
+
+One area that is noticeably different from net/http is the configuration of clients and servers. This tftp package uses "configuration functions" rather than the direct modification of the
 Client/Server struct or a configuration struct passed into the factory functions.
 
 A few explanations of this pattern:
@@ -64,7 +91,7 @@ Want all defaults? Don't pass anything.
 
 Want a Client configured for blocksize 9000 and windowsize 16? Pass in `ClientBlocksize(9000)` and `ClientWindowsize(16)`.
 
-``` go
+```go
 // Default Client
 tftp.NewClient()
 
@@ -84,11 +111,11 @@ opts := []tftp.ClientOpt{
 tftp.NewClient(opts...)
 ```
 
-### Examples
+#### Examples
 
-#### Read File From Server, Print to stdout
+##### Read file from server, print to stdout
 
-``` go
+```go
 client := tftp.NewClient()
 resp, err := client.Get("myftp.local/myfile")
 if err != nil {
@@ -101,9 +128,9 @@ if err != nil {
 }
 ```
 
-#### Write File to Server
+##### Write file to server
 
-``` go
+```go
 
 file, err := os.Open("myfile")
 if err != nil {
@@ -125,92 +152,6 @@ if err != nil {
 ```
 
 
-#### HTTP Proxy
+##### Other examples
 
-This rather contrived example proxies an incoming GET request to GitHub's public API. A more realistic use case might be proxying to PXE boot files on an HTTP server.
-
-``` go
-const baseURL = "https://api.github.com/"
-
-func proxyTFTP(w tftp.ReadRequest) {
-	// Append the requested path to the baseURL
-	url := baseURL + w.Name()
-
-	// Send the HTTP request
-	resp, err := http.DefaultClient.Get(url)
-	if err != nil {
-		// This could send more specific errors, but here we'read
-		// choosing to simply send "file not found"" with the error
-		// message from the HTTP client back to the TFTP client.
-		w.WriteError(tftp.ErrCodeFileNotFound, err.Error())
-		return
-	}
-	defer resp.Body.Close()
-
-	// Copy the body of the response to the TFTP client.
-	if _, err := io.Copy(w, resp.Body); err != nil {
-		log.Println(err)
-	}
-}
-```
-
-
-This function doesn't itself implement the required `ReadHandler` interface, but we can make it a `ReadHandler` with the `ReadHandlerFunc` adapter (much like `http.HandlerFunc`).
-
-``` go
-readHandler := tftp.ReadHandlerFunc(proxyTFTP)
-
-server.ReadHandler(readHandler)
-
-server.ListenAndServe()
-```
-
-```
-# trivialt get localhost:6900 repos/golang/go -o - | jq
-{
-  "id": 23096959,
-  "name": "go",
-  "full_name": "golang/go",
-  ...
-}
-```
-
-Full example in [examples/httpproxy/httpproxy.go](https://github.com/vcabbage/go-tftp/blob/master/examples/httpproxy/httpproxy.go).
-
-#### Save Files to Database
-
-Here `tftpDB` implements the `WriteHandler` interface directly.
-
-``` go
-// tftpDB embeds a *sql.DB and implements the tftp.ReadHandler interface.
-type tftpDB struct {
-	*sql.DB
-}
-
-func (db *tftpDB) ReceiveTFTP(w tftp.WriteRequest) {
-	// Read the data from the client into memory
-	data, err := ioutil.ReadAll(w)
-	if err != nil {
-		log.Println(err)
-		return
-	}
-
-	// Insert the IP address of the client and the data into the database
-	res, err := db.Exec("INSERT INTO tftplogs (ip, log) VALUES (?, ?)", w.Addr().IP.String(), string(data))
-	if err != nil {
-		log.Println(err)
-		return
-	}
-
-	// Log a message with the details
-	id, _ := res.LastInsertId()
-	log.Printf("Inserted %d bytes of data from %s. (ID=%d)", len(data), w.Addr().IP, id)
-}
-```
-
-```
-# go run examples/database/database.go
-2016/04/30 11:20:27 Inserted 32 bytes of data from 127.0.0.1. (ID=13)
-```
-
-Full example including checking the size before accepting the request in [examples/database/database.go](https://github.com/vcabbage/go-tftp/blob/master/examples/database/database.go).
+Full examples including HTTP proxy and database access can be found in [pack.ag/tftp](https://github.com/vcabbage/go-tftp).

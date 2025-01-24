@@ -8,7 +8,7 @@ Package netascii implements reading and writing of netascii, as defined in RFC 7
 Netascii encodes LF to CRLF and CR to CRNUL.
 CRLF is decoded to the platform's representation of a new line.
 */
-package netascii // import "pack.ag/tftp/netascii"
+package netascii
 
 import (
 	"bufio"

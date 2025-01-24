@@ -1,3 +1,3 @@
-module pack.ag/tftp
+module github.com/oakdoor/go-tftp
 
 go 1.19
