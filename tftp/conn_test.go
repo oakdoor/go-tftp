@@ -1007,11 +1007,12 @@ func TestConn_ackData(t *testing.T) {
 				_, _, err := conn.ReadFrom(tDG.buf)
 				if err != nil {
 					t.Errorf("future block, no catchup: expected ACK %v", err)
-					return nil
+					return err
 				}
 
 				if tDG.block() != 12 {
 					t.Errorf("future block, no catchup: expected ACK with block 12, got %d", tDG.block())
+ 					return fmt.Errorf("incorrect block received")
 				}
 				return nil
 			},
@@ -1037,11 +1038,12 @@ func TestConn_ackData(t *testing.T) {
 				_, _, err := conn.ReadFrom(tDG.buf)
 				if err != nil {
 					t.Errorf("future block, rollover: expected ACK %v", err)
-					return nil
+					return err
 				}
 
 				if tDG.block() != 65534 {
 					t.Errorf("future block, rollover: expected ACK with block 65534, got %d", tDG.block())
+ 					return fmt.Errorf("incorrect block received")
 				}
 				return nil
 			},
@@ -1086,7 +1088,7 @@ func TestConn_ackData(t *testing.T) {
 			expectedError:  errBlockSequence.Error(),
 		},
 		{
-			name:       "success, below window",
+			name:       "success, below windowsize",
 			timeout:    time.Second,
 			block:      12,
 			window:     1,

@@ -551,7 +551,7 @@ func (c *conn) ackData() stateType {
         c.log.debug("Server resent current block %d, it must have missed our ACK, but is now caught up", c.block)
 		return c.sendWindowAck()
 	case diff == 1:
-        // Next block as expected
+        // Next block as expected, will ack at end of window
         return c.bufferAndAckData()
 	case diff <= c.windowsize:
 		// We missed blocks
