@@ -919,7 +919,7 @@ func TestConn_ackData(t *testing.T) {
 		window     uint16
 		windowsize uint16
 		catchup    bool
-		connFunc   func(*net.UDPConn, *net.UDPAddr) error
+		connFunc   func(*net.UDPConn, *net.UDPAddr, uint16) error
 
 		expectCatchup  bool
 		expectedBlock  uint16
@@ -1002,7 +1002,7 @@ func TestConn_ackData(t *testing.T) {
 				dg.writeData(14, data[:512])
 				return dg
 			}(),
-			connFunc: func(conn *net.UDPConn, sAddr *net.UDPAddr) error {
+			connFunc: func(conn *net.UDPConn, sAddr *net.UDPAddr, expectedBlock uint16) error {
 				conn.SetReadDeadline(time.Now().Add(testConnTimeout))
 				_, _, err := conn.ReadFrom(tDG.buf)
 				if err != nil {
@@ -1010,9 +1010,8 @@ func TestConn_ackData(t *testing.T) {
 					return err
 				}
 
-				if tDG.block() != 12 {
-					t.Errorf("future block, no catchup: expected ACK with block 12, got %d", tDG.block())
- 					return fmt.Errorf("incorrect block received")
+				if tDG.block() != expectedBlock {
+ 					return fmt.Errorf("future block, no catchup: expected ACK with block %d, got %d", expectedBlock, tDG.block())
 				}
 				return nil
 			},
@@ -1033,7 +1032,7 @@ func TestConn_ackData(t *testing.T) {
 				dg.writeData(0, data[:512])
 				return dg
 			}(),
-			connFunc: func(conn *net.UDPConn, sAddr *net.UDPAddr) error {
+			connFunc: func(conn *net.UDPConn, sAddr *net.UDPAddr, expectedBlock uint16) error {
 				conn.SetReadDeadline(time.Now().Add(testConnTimeout))
 				_, _, err := conn.ReadFrom(tDG.buf)
 				if err != nil {
@@ -1041,8 +1040,8 @@ func TestConn_ackData(t *testing.T) {
 					return err
 				}
 
-				if tDG.block() != 65534 {
-					t.Errorf("future block, rollover: expected ACK with block 65534, got %d", tDG.block())
+				if tDG.block() != expectedBlock {
+					t.Errorf("future block, rollover: expected ACK with block %d, got %d", expectedBlock, tDG.block())
  					return fmt.Errorf("incorrect block received")
 				}
 				return nil
@@ -1126,7 +1125,7 @@ func TestConn_ackData(t *testing.T) {
 			}
 
 			if c.connFunc != nil {
-				if err := c.connFunc(cNetConn, sAddr); err != nil {
+				if err := c.connFunc(cNetConn, sAddr, c.expectedBlock); err != nil {
 					t.Fatal(err)
 				}
 			}
