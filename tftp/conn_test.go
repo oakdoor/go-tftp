@@ -919,8 +919,9 @@ func TestConn_ackData(t *testing.T) {
 		window     uint16
 		windowsize uint16
 		catchup    bool
-		connFunc   func(*net.UDPConn, *net.UDPAddr, uint16) error
+		connFunc   func(*net.UDPConn, *net.UDPAddr) error
 
+        expectAck      bool
 		expectCatchup  bool
 		expectedBlock  uint16
 		expectedWindow uint16
@@ -938,6 +939,7 @@ func TestConn_ackData(t *testing.T) {
 				return dg
 			}(),
 
+            expectAck: true,
 			expectedBlock:  13,
 			expectedWindow: 0,
 			expectedError:  "^$",
@@ -971,6 +973,7 @@ func TestConn_ackData(t *testing.T) {
 				return dg
 			}(),
 
+            expectAck: true,
 			expectedBlock:  12,
 			expectedWindow: 0,
 			expectedError:  errBlockSequence.Error(),
@@ -1002,20 +1005,8 @@ func TestConn_ackData(t *testing.T) {
 				dg.writeData(14, data[:512])
 				return dg
 			}(),
-			connFunc: func(conn *net.UDPConn, sAddr *net.UDPAddr, expectedBlock uint16) error {
-				conn.SetReadDeadline(time.Now().Add(testConnTimeout))
-				_, _, err := conn.ReadFrom(tDG.buf)
-				if err != nil {
-					t.Errorf("future block, no catchup: expected ACK %v", err)
-					return err
-				}
 
-				if tDG.block() != expectedBlock {
- 					return fmt.Errorf("future block, no catchup: expected ACK with block %d, got %d", expectedBlock, tDG.block())
-				}
-				return nil
-			},
-
+            expectAck: true,
 			expectCatchup:  true,
 			expectedBlock:  12,
 			expectedWindow: 0,
@@ -1032,21 +1023,8 @@ func TestConn_ackData(t *testing.T) {
 				dg.writeData(0, data[:512])
 				return dg
 			}(),
-			connFunc: func(conn *net.UDPConn, sAddr *net.UDPAddr, expectedBlock uint16) error {
-				conn.SetReadDeadline(time.Now().Add(testConnTimeout))
-				_, _, err := conn.ReadFrom(tDG.buf)
-				if err != nil {
-					t.Errorf("future block, rollover: expected ACK %v", err)
-					return err
-				}
 
-				if tDG.block() != expectedBlock {
-					t.Errorf("future block, rollover: expected ACK with block %d, got %d", expectedBlock, tDG.block())
- 					return fmt.Errorf("incorrect block received")
-				}
-				return nil
-			},
-
+            expectAck: true,
 			expectCatchup:  true,
 			expectedBlock:  65534,
 			expectedWindow: 0,
@@ -1115,6 +1093,20 @@ func TestConn_ackData(t *testing.T) {
 			tConn.windowsize = c.windowsize
 			tConn.catchup = c.catchup
 
+            c.connFunc = func(conn *net.UDPConn, sAddr *net.UDPAddr) error {
+                conn.SetReadDeadline(time.Now().Add(testConnTimeout))
+                _, _, err := conn.ReadFrom(tDG.buf)
+                if err != nil {
+                    t.Errorf("%s: expected ACK %v", c.name, err)
+                    return err
+                }
+
+                if tDG.block() != c.expectedBlock {
+                    return fmt.Errorf("%s: expected ACK with block %d, got %d", c.name, c.expectedBlock, tDG.block())
+                }
+                return nil
+            }
+
 			_ = tConn.ackData() // TODO: check return func
 			// Error
 			if tConn.err != nil {
@@ -1124,8 +1116,8 @@ func TestConn_ackData(t *testing.T) {
 				}
 			}
 
-			if c.connFunc != nil {
-				if err := c.connFunc(cNetConn, sAddr, c.expectedBlock); err != nil {
+			if c.expectAck {
+				if err := c.connFunc(cNetConn, sAddr); err != nil {
 					t.Fatal(err)
 				}
 			}
