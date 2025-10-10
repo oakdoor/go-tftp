@@ -1244,6 +1244,7 @@ func TestConn_ackDataWindow(t *testing.T) {
             blocks: []testBlock{
                 newTestBlock(13, data),
                 newTestBlock(14, data),
+                // Packet 15 dropped
                 newTestBlockExpectAck(16, data, 14),
                 newTestBlock(15, data),
                 newTestBlock(16, data),
@@ -1259,6 +1260,7 @@ func TestConn_ackDataWindow(t *testing.T) {
             window:     0,
             blocks: []testBlock{
                 newTestBlock(13, data),
+                // Packet 14 dropped
                 newTestBlockExpectAck(15, data, 13),
                 newTestBlock(16, data),
                 newTestBlock(14, data),
@@ -1277,6 +1279,7 @@ func TestConn_ackDataWindow(t *testing.T) {
                 newTestBlock(13, data),
                 newTestBlock(14, data),
                 newTestBlock(15, data),
+                // Packet 16 dropped
                 // Client timeout and resend
                 newTestBlock(13, data),
                 newTestBlock(14, data),
@@ -1293,11 +1296,53 @@ func TestConn_ackDataWindow(t *testing.T) {
             blocks: []testBlock{
                 newTestBlock(13, data),
                 newTestBlock(14, data),
+                // Packet 15 dropped
+                // Packet 16 dropped
                 // Client timeout and resend
                 newTestBlock(13, data),
                 newTestBlock(14, data),
                 newTestBlock(15, data),
                 newTestBlockExpectAck(16, data, 16),
+            },
+        },
+        {
+            name:       "client missed end of window ack",
+            timeout:    time.Second,
+            block:      12,
+            windowsize: 4,
+            window:     0,
+            blocks: []testBlock{
+                newTestBlock(13, data),
+                newTestBlock(14, data),
+                newTestBlock(15, data),
+                newTestBlockExpectAck(16, data, 16), // This ack missed by client
+                // Client timeout and resend
+                newTestBlock(13, data),
+                newTestBlock(14, data),
+                newTestBlock(15, data),
+                newTestBlockExpectAck(16, data, 16),
+            },
+        },
+        {
+            name:       "client missed mid window ack",
+            timeout:    time.Second,
+            block:      12,
+            windowsize: 4,
+            window:     0,
+            blocks: []testBlock{
+                newTestBlock(13, data),
+                newTestBlock(14, data),
+                // Packet 15 dropped
+                newTestBlockExpectAck(16, data, 14), // This ack missed by client
+                // Client timeout and resend
+                newTestBlock(13, data),
+                newTestBlockExpectAck(14, data, 14), // Re-ack as received the acked block again
+                newTestBlock(15, data), // Client still sending window before actioning ack
+                newTestBlock(16, data), // Client still sending window before actioning ack
+                newTestBlock(15, data), // Server ignores this resent block
+                newTestBlock(16, data), // Server ignores this resent block
+                newTestBlock(17, data),
+                newTestBlockExpectAck(18, data, 18),
             },
         },
     }
