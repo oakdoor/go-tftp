@@ -1111,7 +1111,7 @@ func TestConn_ackData(t *testing.T) {
 			tConn.catchup = c.catchup
 
             c.connFunc = func(conn *net.UDPConn, sAddr *net.UDPAddr) error {
-                conn.SetReadDeadline(time.Now().Add(testConnTimeout))
+                conn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
                 _, _, err := conn.ReadFrom(tDG.buf)
 
                 if !c.expectAck {
@@ -1267,6 +1267,39 @@ func TestConn_ackDataWindow(t *testing.T) {
                 newTestBlockExpectAck(17, data, 17),
             },
         },
+        {
+            name:       "missed last packet in window",
+            timeout:    time.Second,
+            block:      12,
+            windowsize: 4,
+            window:     0,
+            blocks: []testBlock{
+                newTestBlock(13, data),
+                newTestBlock(14, data),
+                newTestBlock(15, data),
+                // Client timeout and resend
+                newTestBlock(13, data),
+                newTestBlock(14, data),
+                newTestBlock(15, data),
+                newTestBlockExpectAck(16, data, 16),
+            },
+        },
+        {
+            name:       "missed last packets in window",
+            timeout:    time.Second,
+            block:      12,
+            windowsize: 4,
+            window:     0,
+            blocks: []testBlock{
+                newTestBlock(13, data),
+                newTestBlock(14, data),
+                // Client timeout and resend
+                newTestBlock(13, data),
+                newTestBlock(14, data),
+                newTestBlock(15, data),
+                newTestBlockExpectAck(16, data, 16),
+            },
+        },
     }
 
     for _, c := range cases {
@@ -1280,7 +1313,7 @@ func TestConn_ackDataWindow(t *testing.T) {
             tConn.catchup = c.catchup
 
             c.connFunc = func(conn *net.UDPConn, sAddr *net.UDPAddr, expectAck bool, expectedAckBlock uint16) error {
-                conn.SetReadDeadline(time.Now().Add(testConnTimeout))
+                conn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
                 _, _, err := conn.ReadFrom(tDG.buf)
 
                 if !expectAck {
