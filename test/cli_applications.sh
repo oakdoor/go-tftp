@@ -10,6 +10,10 @@ mkdir -p $TEST_OUTPUT_DIR
 
 trap 'pkill -f "tftp-server"' exit
 
+echo "building apps..."
+go build -o tftp-client cmd/tftp-client/main.go
+go build -o tftp-server cmd/tftp-server/main.go
+
 echo "starting server..."
 ./tftp-server --output-folder ${TEST_OUTPUT_DIR} --port ${TEST_PORT} &
 sleep 1
