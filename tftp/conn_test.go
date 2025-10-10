@@ -962,10 +962,10 @@ func TestConn_ackData(t *testing.T) {
 			expectedError:  "^$",
 		},
 		{
-			name:       "repeat block",
+			name:       "repeat current block, mid window",
 			timeout:    time.Second,
 			block:      12,
-			windowsize: 2,
+			windowsize: 4,
 			window:     1,
 			rx: func() datagram {
 				dg := datagram{}
@@ -973,11 +973,28 @@ func TestConn_ackData(t *testing.T) {
 				return dg
 			}(),
 
-            expectAck: true,
+            expectAck: false,
 			expectedBlock:  12,
-			expectedWindow: 0,
+			expectedWindow: 1,
 			expectedError:  errBlockSequence.Error(),
 		},
+        {
+            name:       "repeat current block, previously acked block",
+            timeout:    time.Second,
+            block:      12,
+            windowsize: 4,
+            window:     0,
+            rx: func() datagram {
+                dg := datagram{}
+                dg.writeData(12, data[:512])
+                return dg
+            }(),
+
+            expectAck: true,
+            expectedBlock:  12,
+            expectedWindow: 0,
+            expectedError:  errBlockSequence.Error(),
+        },
 		{
 			name:       "server resending; ignore",
 			timeout:    time.Second,

@@ -548,8 +548,13 @@ func (c *conn) ackData() stateType {
 
 	switch diff := rollover_diff; {
 	case diff == 0:
+        // Received the most recently stored block again
         c.log.debug("Server resent current block %d, it must have missed our ACK, but is now caught up", c.block)
-		return c.sendWindowAck()
+        if c.window == 0 {
+            // The repeated block was the same block we previously acked, sender must have missed our ack so ack again
+		    return c.sendWindowAck()
+		}
+        return c.read
 	case diff == 1:
         // Next block as expected, will ack at end of window
         return c.bufferAndAckData()
