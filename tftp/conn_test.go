@@ -1168,6 +1168,124 @@ func TestConn_ackData(t *testing.T) {
 	}
 }
 
+type testBlock struct {
+    rx                  datagram
+    expectAck           bool
+    expectedAckBlock   uint16
+}
+
+func newTestBlock(blockNumber uint16, data []byte) testBlock {
+    return testBlock{
+                rx: func() datagram {
+                   dg := datagram{}
+                   dg.writeData(blockNumber, data[:512])
+                   return dg
+                }(),
+            }
+}
+
+func newTestBlockExpectAck(blockNumber uint16, data []byte, expectedAckBlock uint16) testBlock {
+    return testBlock{
+                rx: func() datagram {
+                  dg := datagram{}
+                  dg.writeData(blockNumber, data[:512])
+                  return dg
+                }(),
+
+                expectAck: true,
+                expectedAckBlock: expectedAckBlock,
+            }
+}
+
+func TestConn_ackDataWindow(t *testing.T) {
+    tDG := datagram{buf: make([]byte, 512)}
+	data := getTestData(t, "1MB-random")
+
+	cases := []struct {
+        name       string
+		timeout    time.Duration
+		block      uint16
+		window     uint16
+		windowsize uint16
+		catchup    bool
+		connFunc   func(*net.UDPConn, *net.UDPAddr, bool, uint16) error
+
+        blocks     []testBlock
+	}{
+        {
+            name:       "success, windowsize 1",
+            timeout:    time.Second,
+            block:      12,
+            windowsize: 1,
+            window:     0,
+            blocks: []testBlock{
+                newTestBlockExpectAck(13, data, 13),
+            },
+        },
+        {
+            name:       "success, windowsize 4",
+            timeout:    time.Second,
+            block:      12,
+            windowsize: 4,
+            window:     0,
+            blocks: []testBlock{
+                newTestBlock(13, data),
+                newTestBlock(14, data),
+                newTestBlock(15, data),
+                newTestBlockExpectAck(16, data, 16),
+            },
+        },
+    }
+
+    for _, c := range cases {
+        t.Run(c.name, func(t *testing.T) {
+            tConn, sAddr, cNetConn, closer := testConns(t)
+            defer closer()
+            tConn.timeout = c.timeout
+            tConn.block = c.block
+            tConn.window = c.window
+            tConn.windowsize = c.windowsize
+            tConn.catchup = c.catchup
+
+            c.connFunc = func(conn *net.UDPConn, sAddr *net.UDPAddr, expectAck bool, expectedAckBlock uint16) error {
+                conn.SetReadDeadline(time.Now().Add(testConnTimeout))
+                _, _, err := conn.ReadFrom(tDG.buf)
+
+                if !expectAck {
+                    if err == nil {
+                        return fmt.Errorf("%s: received unexpected ACK", c.name)
+                    }
+
+                    if ok, _ := regexp.MatchString("i/o timeout", err.Error()); ok {
+                        return nil
+                    }
+
+                    return fmt.Errorf("unexpected error %q", err.Error())
+                }
+
+                if err != nil {
+                    t.Errorf("%s: expected ACK for block %d, got error %v", c.name, expectedAckBlock, err)
+                    return err
+                }
+
+                if tDG.block() != expectedAckBlock {
+                    return fmt.Errorf("%s: expected ACK with block %d, got %d", c.name, expectedAckBlock, tDG.block())
+                }
+                return nil
+            }
+
+            for _, dataBlock := range c.blocks {
+                tConn.rx = dataBlock.rx
+                _ = tConn.ackData()
+
+                if err := c.connFunc(cNetConn, sAddr, dataBlock.expectAck, dataBlock.expectedAckBlock); err != nil {
+                    t.Fatal(err)
+                }
+            }
+        })
+    }
+}
+
 func TestConn_parseOptions(t *testing.T) {
 	dg := datagram{}
 
