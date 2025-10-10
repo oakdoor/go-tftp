@@ -1235,6 +1235,38 @@ func TestConn_ackDataWindow(t *testing.T) {
                 newTestBlockExpectAck(16, data, 16),
             },
         },
+        {
+            name:       "missed packet mid window",
+            timeout:    time.Second,
+            block:      12,
+            windowsize: 4,
+            window:     0,
+            blocks: []testBlock{
+                newTestBlock(13, data),
+                newTestBlock(14, data),
+                newTestBlockExpectAck(16, data, 14),
+                newTestBlock(15, data),
+                newTestBlock(16, data),
+                newTestBlock(17, data),
+                newTestBlockExpectAck(18, data, 18),
+            },
+        },
+        {
+            name:       "missed packet early in window",
+            timeout:    time.Second,
+            block:      12,
+            windowsize: 4,
+            window:     0,
+            blocks: []testBlock{
+                newTestBlock(13, data),
+                newTestBlockExpectAck(15, data, 13),
+                newTestBlock(16, data),
+                newTestBlock(14, data),
+                newTestBlock(15, data),
+                newTestBlock(16, data),
+                newTestBlockExpectAck(17, data, 17),
+            },
+        },
     }
 
     for _, c := range cases {
