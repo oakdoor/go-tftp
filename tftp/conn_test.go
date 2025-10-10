@@ -1096,6 +1096,19 @@ func TestConn_ackData(t *testing.T) {
             c.connFunc = func(conn *net.UDPConn, sAddr *net.UDPAddr) error {
                 conn.SetReadDeadline(time.Now().Add(testConnTimeout))
                 _, _, err := conn.ReadFrom(tDG.buf)
+
+                if !c.expectAck {
+                    if err == nil {
+                        return fmt.Errorf("%s: received unexpected ACK", c.name)
+                    }
+
+                    if ok, _ := regexp.MatchString("i/o timeout", err.Error()); ok {
+                        return nil
+                    }
+
+                    return fmt.Errorf("expected error %q, got %q", c.expectedError, err.Error())
+                }
+
                 if err != nil {
                     t.Errorf("%s: expected ACK %v", c.name, err)
                     return err
@@ -1116,11 +1129,9 @@ func TestConn_ackData(t *testing.T) {
 				}
 			}
 
-			if c.expectAck {
-				if err := c.connFunc(cNetConn, sAddr); err != nil {
-					t.Fatal(err)
-				}
-			}
+            if err := c.connFunc(cNetConn, sAddr); err != nil {
+                t.Fatal(err)
+            }
 
 			// Block number
 			if tConn.block != c.expectedBlock {
