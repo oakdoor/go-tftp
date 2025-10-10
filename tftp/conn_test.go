@@ -912,14 +912,15 @@ func TestConn_ackData(t *testing.T) {
 	data := getTestData(t, "1MB-random")
 
 	cases := []struct {
-		name       string
-		timeout    time.Duration
-		rx         datagram
-		block      uint16
-		window     uint16
-		windowsize uint16
-		catchup    bool
-		connFunc   func(*net.UDPConn, *net.UDPAddr) error
+		name            string
+		timeout         time.Duration
+		rx              datagram
+		block           uint16
+		window          uint16
+		windowsize      uint16
+		catchup         bool
+		resentAckCount  uint16
+		connFunc        func(*net.UDPConn, *net.UDPAddr) error
 
         expectAck      bool
 		expectCatchup  bool
@@ -1097,6 +1098,41 @@ func TestConn_ackData(t *testing.T) {
 			expectedWindow: 2,
 			expectedError:  "^$",
 		},
+        {
+            name:           "resend ack twice in a row",
+            timeout:        time.Second,
+            block:          12,
+            window:         0,
+            windowsize:     4,
+            resentAckCount: 1,
+            rx: func() datagram {
+                dg := datagram{}
+                dg.writeData(12, data[:512])
+                return dg
+            }(),
+
+            expectAck: true,
+            expectedBlock:  12,
+            expectedWindow: 0,
+            expectedError:  "^$",
+        },
+        {
+            name:           "do not resend ack if in retransmit cycle of more than 2",
+            timeout:        time.Second,
+            block:          12,
+            window:         0,
+            windowsize:     4,
+            resentAckCount: 2,
+            rx: func() datagram {
+                dg := datagram{}
+                dg.writeData(12, data[:512])
+                return dg
+            }(),
+
+            expectedBlock:  12,
+            expectedWindow: 0,
+            expectedError:  "^$",
+        },
 	}
 
 	for _, c := range cases {
@@ -1108,6 +1144,7 @@ func TestConn_ackData(t *testing.T) {
 			tConn.block = c.block
 			tConn.window = c.window
 			tConn.windowsize = c.windowsize
+			tConn.resentAckCount = c.resentAckCount
 			tConn.catchup = c.catchup
 
             c.connFunc = func(conn *net.UDPConn, sAddr *net.UDPAddr) error {
@@ -1116,7 +1153,7 @@ func TestConn_ackData(t *testing.T) {
 
                 if !c.expectAck {
                     if err == nil {
-                        return fmt.Errorf("%s: received unexpected ACK", c.name)
+                        return fmt.Errorf("%s: received unexpected ACK for block %d", c.name, tDG.block())
                     }
 
                     if ok, _ := regexp.MatchString("i/o timeout", err.Error()); ok {
@@ -1202,13 +1239,14 @@ func TestConn_ackDataWindow(t *testing.T) {
 	data := getTestData(t, "1MB-random")
 
 	cases := []struct {
-        name       string
-		timeout    time.Duration
-		block      uint16
-		window     uint16
-		windowsize uint16
-		catchup    bool
-		connFunc   func(*net.UDPConn, *net.UDPAddr, bool, uint16) error
+        name            string
+		timeout         time.Duration
+		block           uint16
+		window          uint16
+		windowsize      uint16
+		catchup         bool
+		resentAckCount  uint16
+		connFunc        func(*net.UDPConn, *net.UDPAddr, bool, uint16) error
 
         blocks     []testBlock
 	}{
@@ -1345,6 +1383,70 @@ func TestConn_ackDataWindow(t *testing.T) {
                 newTestBlockExpectAck(18, data, 18),
             },
         },
+        {
+            name:       "server slow to ack, client resends and then receives ack",
+            timeout:    time.Second,
+            block:      0,
+            windowsize: 4,
+            window:     0,
+            blocks: []testBlock{
+                newTestBlock(1, data),
+                newTestBlock(2, data),
+                newTestBlock(3, data),
+                newTestBlockExpectAck(4, data, 4), // This ack is delayed for some reason, client resends
+                newTestBlock(1, data),
+                newTestBlock(2, data),
+                newTestBlock(3, data),
+                newTestBlockExpectAck(4, data, 4), // Have to treat this as if the client missed the ack
+                // Client has now received 2 acks for block 4, so will send blocks 5-8 twice
+                newTestBlock(5, data),
+                newTestBlock(6, data),
+                newTestBlock(7, data),
+                newTestBlockExpectAck(8, data, 8),
+                newTestBlock(5, data),
+                newTestBlock(6, data),
+                newTestBlock(7, data),
+                newTestBlockExpectAck(8, data, 8), // Have to treat this as if the client missed the ack
+                newTestBlock(9, data),
+                newTestBlock(10, data),
+                newTestBlock(11, data),
+                newTestBlockExpectAck(12, data, 12),
+                newTestBlock(9, data),
+                newTestBlock(10, data),
+                newTestBlock(11, data),
+                newTestBlock(12, data), // We need to break out of the cycle of double transmission, so don't ack here
+                newTestBlock(13, data),
+                newTestBlock(14, data),
+                newTestBlock(15, data),
+                newTestBlockExpectAck(16, data, 16), // Client doesn't receive ack
+                newTestBlock(13, data),
+                newTestBlock(14, data),
+                newTestBlock(15, data),
+                newTestBlockExpectAck(16, data, 16), // Need to ack again here
+            },
+        },
+        {
+            name:           "if breaking out of retransmit cycle but client sends again then ack",
+            timeout:        time.Second,
+            block:          12,
+            windowsize:     4,
+            window:         0,
+            resentAckCount: 2,
+            blocks: []testBlock{
+                newTestBlock(9, data),
+                newTestBlock(10, data),
+                newTestBlock(11, data),
+                newTestBlock(12, data), // We need to break out of the cycle of double transmission, so don't ack here
+                newTestBlock(9, data),
+                newTestBlock(10, data),
+                newTestBlock(11, data),
+                newTestBlockExpectAck(12, data, 12), // Client hasn't received ack 12 so resend
+                newTestBlock(13, data),
+                newTestBlock(14, data),
+                newTestBlock(15, data),
+                newTestBlockExpectAck(16, data, 16), // Need to ack again here
+            },
+        },
     }
 
     for _, c := range cases {
@@ -1356,6 +1458,7 @@ func TestConn_ackDataWindow(t *testing.T) {
             tConn.window = c.window
             tConn.windowsize = c.windowsize
             tConn.catchup = c.catchup
+            tConn.resentAckCount = c.resentAckCount
 
             c.connFunc = func(conn *net.UDPConn, sAddr *net.UDPAddr, expectAck bool, expectedAckBlock uint16) error {
                 conn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
@@ -1363,7 +1466,7 @@ func TestConn_ackDataWindow(t *testing.T) {
 
                 if !expectAck {
                     if err == nil {
-                        return fmt.Errorf("%s: received unexpected ACK", c.name)
+                        return fmt.Errorf("%s: received unexpected ACK for block %d", c.name, tDG.block())
                     }
 
                     if ok, _ := regexp.MatchString("i/o timeout", err.Error()); ok {
