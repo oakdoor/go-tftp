@@ -1274,6 +1274,23 @@ func TestConn_ackDataWindow(t *testing.T) {
             },
         },
         {
+            name:       "success, 2 windows windowsize 4",
+            timeout:    time.Second,
+            block:      12,
+            windowsize: 4,
+            window:     0,
+            blocks: []testBlock{
+                newTestBlock(13, data),
+                newTestBlock(14, data),
+                newTestBlock(15, data),
+                newTestBlockExpectAck(16, data, 16),
+                newTestBlock(17, data),
+                newTestBlock(18, data),
+                newTestBlock(19, data),
+                newTestBlockExpectAck(20, data, 20),
+            },
+        },
+        {
             name:       "missed packet mid window",
             timeout:    time.Second,
             block:      12,
