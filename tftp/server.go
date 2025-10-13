@@ -31,6 +31,8 @@ type Server struct {
 
 	retransmit int // Per-packet retransmission limit
 
+	fullWindowReAckDeadline *time.Duration // How long to wait before resending a data ack if server receives repeated block
+
 	rh ReadHandler
 	wh WriteHandler
 }
@@ -264,9 +266,9 @@ func (s *Server) newConn(req *request, reqChan chan []byte) (*conn, func() error
 	}
 
 	if s.singlePort {
-		c = newSinglePortConn(req.addr, dg.mode(), s.conn, reqChan)
+		c = newSinglePortConn(req.addr, dg.mode(), s.conn, reqChan, s.fullWindowReAckDeadline)
 	} else {
-		c, err = newConn(s.net, dg.mode(), req.addr, 0) // Use empty mode until request has been parsed.
+		c, err = newConn(s.net, dg.mode(), req.addr, 0, s.fullWindowReAckDeadline) // Use empty mode until request has been parsed.
 		if err != nil {
 			s.log.err("Received error opening connection for new request: %v", err)
 			return nil, nil, err

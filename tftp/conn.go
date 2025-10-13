@@ -33,7 +33,7 @@ var defaultOptions = map[string]string{
 //
 // udpNet is one of "udp", "udp4", or "udp6"
 // addr is the address of the target client or server
-func newConn(udpNet string, mode TransferMode, addr *net.UDPAddr, listenPort int) (*conn, error) {
+func newConn(udpNet string, mode TransferMode, addr *net.UDPAddr, listenPort int, fullWindowReAckDeadline *time.Duration) (*conn, error) {
 	// Start listening, an empty UDPAddr will cause the system to assign a port
 	netConn, err := net.ListenUDP(udpNet, &net.UDPAddr{Port: listenPort})
 	if err != nil {
@@ -49,13 +49,14 @@ func newConn(udpNet string, mode TransferMode, addr *net.UDPAddr, listenPort int
 		windowsize: defaultWindowsize,
 		retransmit: defaultRetransmit,
 		mode:       mode,
+		fullWindowReAckDeadline: fullWindowReAckDeadline,
 	}
 	c.rx.buf = make([]byte, 4+defaultBlksize) // +4 for headers
 
 	return c, nil
 }
 
-func newSinglePortConn(addr *net.UDPAddr, mode TransferMode, netConn *net.UDPConn, reqChan chan []byte) *conn {
+func newSinglePortConn(addr *net.UDPAddr, mode TransferMode, netConn *net.UDPConn, reqChan chan []byte, fullWindowReAckDeadline *time.Duration) *conn {
 	return &conn{
 		log:        newLogger(addr.String()),
 		remoteAddr: addr,
@@ -67,6 +68,7 @@ func newSinglePortConn(addr *net.UDPAddr, mode TransferMode, netConn *net.UDPCon
 		buf:        make([]byte, 4+defaultBlksize), // +4 for headers
 		reqChan:    reqChan,
 		netConn:    netConn,
+		fullWindowReAckDeadline: fullWindowReAckDeadline,
 	}
 }
 
@@ -80,7 +82,7 @@ func newConnFromHost(udpNet string, mode TransferMode, host string, listenPort i
 		return nil, wrapError(err, "address resolve failed")
 	}
 
-	return newConn(udpNet, mode, addr, listenPort)
+	return newConn(udpNet, mode, addr, listenPort, nil)
 }
 
 // conn handles TFTP read and write requests
@@ -106,6 +108,7 @@ type conn struct {
 
 	// Other, non-negotiable options
 	retransmit int // Number of times an individual datagram will be retransmitted on error
+	fullWindowReAckDeadline *time.Duration // How long to wait before resending a data ack if server receives repeated block
 
 	// Track state of transfer
 	optionsParsed bool   // Whether TFTP options have been parsed yet
@@ -115,7 +118,7 @@ type conn struct {
 	p             []byte // bytes to be read/written (depending on send/receive)
 	n             int    // byte count read/written
 	tries         int    // retry counter
-	err           error  // error has occurreds
+	err           error  // error has occurred
 	closing       bool   // connection is closing
 	done          bool   // the transfer is complete
     delayedWindowAckSender     *time.Timer      // Timer for delayed ACK

@@ -30,11 +30,13 @@ func TestNewConn(t *testing.T) {
 		mode        TransferMode
 		addr        *net.UDPAddr
 		listenPort  int
+		fullWindowReAckDeadline time.Duration
 
 		expectedAddr        *net.UDPAddr
 		expectedMode        TransferMode
 		expectedListenPort  int
 		expectedError       string
+		expectedFullWindowReAckDeadline time.Duration
 	}{
 		{
 			name: "success on ephemeral port",
@@ -51,10 +53,12 @@ func TestNewConn(t *testing.T) {
 			mode: ModeOctet,
 			addr: addr,
 			listenPort: 8080,
+			fullWindowReAckDeadline: time.Second*10,
 
 			expectedAddr: addr,
 			expectedMode: ModeOctet,
 		    expectedListenPort:  8080,
+		    expectedFullWindowReAckDeadline: time.Second*10,
 		},
 		{
 			name: "error",
@@ -68,7 +72,7 @@ func TestNewConn(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			conn, err := newConn(c.net, c.mode, c.addr, c.listenPort)
+			conn, err := newConn(c.net, c.mode, c.addr, c.listenPort, &c.fullWindowReAckDeadline)
 
 			// Errorf
 			if err != nil && ErrorCause(err).Error() != c.expectedError {
@@ -97,6 +101,11 @@ func TestNewConn(t *testing.T) {
             // Listen Port
             if c.expectedListenPort != 0 && c.expectedListenPort != listenPort {
                 t.Errorf("expected listen port %#v, but it was %#v", c.expectedListenPort, listenPort)
+            }
+
+            // fullWindowReAckDeadline
+            if c.expectedFullWindowReAckDeadline != 0 && c.expectedFullWindowReAckDeadline != *conn.fullWindowReAckDeadline {
+                t.Errorf("expected deadline %s, but it was %s", c.expectedFullWindowReAckDeadline, conn.fullWindowReAckDeadline)
             }
 
 			conn.Close()
@@ -2184,7 +2193,7 @@ func testConns(t *testing.T) (*conn, *net.UDPAddr, *net.UDPConn, func()) {
 		t.Fatal(err)
 	}
 
-	tConn, err := newConn("udp4", ModeOctet, cAddr, 0)
+	tConn, err := newConn("udp4", ModeOctet, cAddr, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
