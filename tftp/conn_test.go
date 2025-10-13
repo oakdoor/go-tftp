@@ -919,7 +919,6 @@ func TestConn_ackData(t *testing.T) {
 		window          uint16
 		windowsize      uint16
 		catchup         bool
-		resentAckCount  uint16
 		connFunc        func(*net.UDPConn, *net.UDPAddr) error
 
         expectAck      bool
@@ -1104,7 +1103,6 @@ func TestConn_ackData(t *testing.T) {
             block:          12,
             window:         0,
             windowsize:     4,
-            resentAckCount: 1,
             rx: func() datagram {
                 dg := datagram{}
                 dg.writeData(12, data[:512])
@@ -1112,23 +1110,6 @@ func TestConn_ackData(t *testing.T) {
             }(),
 
             expectAck: true,
-            expectedBlock:  12,
-            expectedWindow: 0,
-            expectedError:  "^$",
-        },
-        {
-            name:           "do not resend ack if in retransmit cycle of more than 2",
-            timeout:        time.Second,
-            block:          12,
-            window:         0,
-            windowsize:     4,
-            resentAckCount: 2,
-            rx: func() datagram {
-                dg := datagram{}
-                dg.writeData(12, data[:512])
-                return dg
-            }(),
-
             expectedBlock:  12,
             expectedWindow: 0,
             expectedError:  "^$",
@@ -1144,11 +1125,10 @@ func TestConn_ackData(t *testing.T) {
 			tConn.block = c.block
 			tConn.window = c.window
 			tConn.windowsize = c.windowsize
-			tConn.resentAckCount = c.resentAckCount
 			tConn.catchup = c.catchup
 
             c.connFunc = func(conn *net.UDPConn, sAddr *net.UDPAddr) error {
-                conn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
+                conn.SetReadDeadline(time.Now().Add(time.Millisecond * 200))
                 _, _, err := conn.ReadFrom(tDG.buf)
 
                 if !c.expectAck {
@@ -1205,9 +1185,17 @@ func TestConn_ackData(t *testing.T) {
 	}
 }
 
+type AckKind int
+
+const (
+    NoAck AckKind = iota
+    ExpectAck
+    ExpectReAck
+)
+
 type testBlock struct {
-    rx                  datagram
-    expectAck           bool
+    rx                 datagram
+    ackKind            AckKind
     expectedAckBlock   uint16
 }
 
@@ -1229,7 +1217,20 @@ func newTestBlockExpectAck(blockNumber uint16, data []byte, expectedAckBlock uin
                   return dg
                 }(),
 
-                expectAck: true,
+                ackKind: ExpectAck,
+                expectedAckBlock: expectedAckBlock,
+            }
+}
+
+func newTestBlockExpectReAck(blockNumber uint16, data []byte, expectedAckBlock uint16) testBlock {
+    return testBlock{
+                rx: func() datagram {
+                  dg := datagram{}
+                  dg.writeData(blockNumber, data[:512])
+                  return dg
+                }(),
+
+                ackKind: ExpectReAck,
                 expectedAckBlock: expectedAckBlock,
             }
 }
@@ -1245,8 +1246,7 @@ func TestConn_ackDataWindow(t *testing.T) {
 		window          uint16
 		windowsize      uint16
 		catchup         bool
-		resentAckCount  uint16
-		connFunc        func(*net.UDPConn, *net.UDPAddr, bool, uint16) error
+		connFunc        func(*net.UDPConn, *net.UDPAddr, AckKind, uint16) error
 
         blocks     []testBlock
 	}{
@@ -1370,12 +1370,12 @@ func TestConn_ackDataWindow(t *testing.T) {
                 newTestBlock(13, data),
                 newTestBlock(14, data),
                 newTestBlock(15, data),
-                newTestBlockExpectAck(16, data, 16), // This ack missed by client
-                // Client timeout and resend
+                newTestBlockExpectAck(16, data, 16),
+                // Pretend client misses the ack sent for block 16, so send the data again
                 newTestBlock(13, data),
                 newTestBlock(14, data),
                 newTestBlock(15, data),
-                newTestBlockExpectAck(16, data, 16),
+                newTestBlockExpectReAck(16, data, 16),
             },
         },
         {
@@ -1388,10 +1388,10 @@ func TestConn_ackDataWindow(t *testing.T) {
                 newTestBlock(13, data),
                 newTestBlock(14, data),
                 // Packet 15 dropped
-                newTestBlockExpectAck(16, data, 14), // This ack missed by client
-                // Client timeout and resend
+                newTestBlockExpectAck(16, data, 14),
+                // Pretend client misses the ack sent for block 14, so send the data again
                 newTestBlock(13, data),
-                newTestBlockExpectAck(14, data, 14), // Re-ack as received the acked block again
+                newTestBlockExpectReAck(14, data, 14), // Re-ack as received the acked block again
                 newTestBlock(15, data), // Client still sending window before actioning ack
                 newTestBlock(16, data), // Client still sending window before actioning ack
                 newTestBlock(15, data), // Server ignores this resent block
@@ -1414,54 +1414,15 @@ func TestConn_ackDataWindow(t *testing.T) {
                 newTestBlock(1, data),
                 newTestBlock(2, data),
                 newTestBlock(3, data),
-                newTestBlockExpectAck(4, data, 4), // Have to treat this as if the client missed the ack
-                // Client has now received 2 acks for block 4, so will send blocks 5-8 twice
+                newTestBlock(4, data), // We don't expect an ack as the next data block will arrive before the timeout on the delayedWindowAckSender
                 newTestBlock(5, data),
                 newTestBlock(6, data),
                 newTestBlock(7, data),
                 newTestBlockExpectAck(8, data, 8),
-                newTestBlock(5, data),
-                newTestBlock(6, data),
-                newTestBlock(7, data),
-                newTestBlockExpectAck(8, data, 8), // Have to treat this as if the client missed the ack
                 newTestBlock(9, data),
                 newTestBlock(10, data),
                 newTestBlock(11, data),
                 newTestBlockExpectAck(12, data, 12),
-                newTestBlock(9, data),
-                newTestBlock(10, data),
-                newTestBlock(11, data),
-                newTestBlock(12, data), // We need to break out of the cycle of double transmission, so don't ack here
-                newTestBlock(13, data),
-                newTestBlock(14, data),
-                newTestBlock(15, data),
-                newTestBlockExpectAck(16, data, 16), // Client doesn't receive ack
-                newTestBlock(13, data),
-                newTestBlock(14, data),
-                newTestBlock(15, data),
-                newTestBlockExpectAck(16, data, 16), // Need to ack again here
-            },
-        },
-        {
-            name:           "if breaking out of retransmit cycle but client sends again then ack",
-            timeout:        time.Second,
-            block:          12,
-            windowsize:     4,
-            window:         0,
-            resentAckCount: 2,
-            blocks: []testBlock{
-                newTestBlock(9, data),
-                newTestBlock(10, data),
-                newTestBlock(11, data),
-                newTestBlock(12, data), // We need to break out of the cycle of double transmission, so don't ack here
-                newTestBlock(9, data),
-                newTestBlock(10, data),
-                newTestBlock(11, data),
-                newTestBlockExpectAck(12, data, 12), // Client hasn't received ack 12 so resend
-                newTestBlock(13, data),
-                newTestBlock(14, data),
-                newTestBlock(15, data),
-                newTestBlockExpectAck(16, data, 16), // Need to ack again here
             },
         },
     }
@@ -1475,13 +1436,16 @@ func TestConn_ackDataWindow(t *testing.T) {
             tConn.window = c.window
             tConn.windowsize = c.windowsize
             tConn.catchup = c.catchup
-            tConn.resentAckCount = c.resentAckCount
 
-            c.connFunc = func(conn *net.UDPConn, sAddr *net.UDPAddr, expectAck bool, expectedAckBlock uint16) error {
-                conn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
+            c.connFunc = func(conn *net.UDPConn, sAddr *net.UDPAddr, ackKind AckKind, expectedAckBlock uint16) error {
+                if ackKind == ExpectReAck {
+                    time.Sleep(time.Millisecond * 200)
+                }
+
+                conn.SetReadDeadline(time.Now().Add(time.Millisecond * 50))
                 _, _, err := conn.ReadFrom(tDG.buf)
 
-                if !expectAck {
+                if ackKind == NoAck {
                     if err == nil {
                         return fmt.Errorf("%s: received unexpected ACK for block %d", c.name, tDG.block())
                     }
@@ -1508,7 +1472,7 @@ func TestConn_ackDataWindow(t *testing.T) {
                 tConn.rx = dataBlock.rx
                 _ = tConn.ackData()
 
-                if err := c.connFunc(cNetConn, sAddr, dataBlock.expectAck, dataBlock.expectedAckBlock); err != nil {
+                if err := c.connFunc(cNetConn, sAddr, dataBlock.ackKind, dataBlock.expectedAckBlock); err != nil {
                     t.Fatal(err)
                 }
             }

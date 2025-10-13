@@ -108,18 +108,17 @@ type conn struct {
 	retransmit int // Number of times an individual datagram will be retransmitted on error
 
 	// Track state of transfer
-	optionsParsed               bool   // Whether TFTP options have been parsed yet
-	window                      uint16 // Packets sent since last ACK
-	block                       uint16 // Current block #
-	catchup                     bool   // Ignore incoming blocks from a window we reset
-	p                           []byte // bytes to be read/written (depending on send/receive)
-	n                           int    // byte count read/written
-	tries                       int    // retry counter
-	err                         error  // error has occurreds
-	closing                     bool   // connection is closing
-	done                        bool   // the transfer is complete
-	resentAckCount              uint16 // Tracking if any acks were resent recently
-	allowDecrementAckCounter    bool // Flag to allow reducing ack counter
+	optionsParsed bool   // Whether TFTP options have been parsed yet
+	window        uint16 // Packets sent since last ACK
+	block         uint16 // Current block #
+	catchup       bool   // Ignore incoming blocks from a window we reset
+	p             []byte // bytes to be read/written (depending on send/receive)
+	n             int    // byte count read/written
+	tries         int    // retry counter
+	err           error  // error has occurreds
+	closing       bool   // connection is closing
+	done          bool   // the transfer is complete
+    delayedWindowAckSender     *time.Timer      // Timer for delayed ACK
 
 	// Buffers
 	buf   []byte       // incoming data from, sized to blksize + headers
@@ -543,6 +542,11 @@ func (c *conn) ackData() stateType {
     relative_diff := int64(c.rx.block()) - int64(c.block)
     rollover_diff := c.rx.block() - c.block
 
+    if c.delayedWindowAckSender != nil {
+        c.delayedWindowAckSender.Stop()
+        c.delayedWindowAckSender = nil
+    }
+
     if relative_diff < 0 && rollover_diff > c.windowsize {
         c.log.debug("Server resent block %d, it must have missed our ACK, ignoring until caught up", c.rx.block())
         return c.read
@@ -553,15 +557,10 @@ func (c *conn) ackData() stateType {
         // Received the most recently stored block again
         if c.window == 0 {
             // The repeated block was the same block we previously acked, sender must have missed our ack so ack again
-            c.log.debug("Server resent previously acked block %d, it must have missed our ACK, re-acking", c.block)
-
-            if c.resentAckCount >= 2 {
-                // Break out of a retransmission cycle, but ensure that server will resend acks in the future
-                c.resentAckCount = 0
-                return c.read
-            }
-
-            return c.sendWindowAck(true)
+            c.delayedWindowAckSender = time.AfterFunc(100*time.Millisecond, func() {
+                c.sendWindowAck()
+            })
+		    return c.read
 		}
         c.log.debug("Server resent current block %d, it must have missed our ACK, but is now caught up", c.block)
         return c.read
@@ -576,7 +575,7 @@ func (c *conn) ackData() stateType {
 		}
 		c.log.debug("Missing blocks between %d and %d. Resetting to block %d", c.block, c.rx.block(), c.block)
 		c.catchup = true
-		return c.sendWindowAck(false)
+		return c.sendWindowAck()
     default:
         c.log.debug("Server more than a windowsize ahead, which should never happen. Just try and catchup.")
         return c.read
@@ -606,22 +605,11 @@ func (c *conn) bufferAndAckData() stateType {
     }
 
     c.log.trace("Window %d reached, sending ACK for %d\n", c.windowsize, c.block)
-    return c.sendWindowAck(false)
+    return c.sendWindowAck()
 }
 
-func (c *conn) sendWindowAck(resendingAck bool) stateType {
+func (c *conn) sendWindowAck() stateType {
     c.log.trace("sending ACK and resetting window at window %d, windowsize: %d, offset: %d, blksize: %d", c.window, c.windowsize, c.rx.offset, c.blksize)
-    if resendingAck {
-        c.resentAckCount += 1
-        c.allowDecrementAckCounter = false
-    } else if c.resentAckCount > 0 {
-        if c.allowDecrementAckCounter {
-            c.resentAckCount--
-        } else {
-            c.allowDecrementAckCounter = true
-        }
-    }
-
     c.window = 0
     if err := c.sendAck(c.block); err != nil {
         c.err = wrapError(err, "sending DATA ACK")
