@@ -29,6 +29,9 @@ This fork adds CLI client and server applications, and unique quality of life fe
     Of course if the firewall in question is configured to block TFTP connections, this setting won't help you.
     
     Enable single port mode with the `--single-port` flag. This is currently marked experimental as it diverges from the TFTP standard.
+- __Server can save files atomically__
+    
+  The server can be set to save files atomically by first saving the file `filename` to a hidden file named `.filename`, and then only renaming this to `filename` once the whole file has been completed.
 
 ## Licenses
 This is a fork of [pack.ag/tftp](https://github.com/vcabbage/go-tftp) which is licensed under MIT, retained in [LICENSE](LICENSE).
