@@ -1376,6 +1376,7 @@ func TestConn_ackDataWindow(t *testing.T) {
             block:      12,
             windowsize: 4,
             window:     0,
+            fullWindowReAckDeadline: time.Millisecond * 100,
             blocks: []testBlock{
                 newTestBlock(13, data),
                 newTestBlock(14, data),
@@ -1394,6 +1395,7 @@ func TestConn_ackDataWindow(t *testing.T) {
             block:      12,
             windowsize: 4,
             window:     0,
+            fullWindowReAckDeadline: time.Millisecond * 100,
             blocks: []testBlock{
                 newTestBlock(13, data),
                 newTestBlock(14, data),
@@ -1450,11 +1452,18 @@ func TestConn_ackDataWindow(t *testing.T) {
             tConn.fullWindowReAckDeadline = c.fullWindowReAckDeadline
 
             c.connFunc = func(conn *net.UDPConn, sAddr *net.UDPAddr, ackKind AckKind, expectedAckBlock uint16) error {
+                conn.SetReadDeadline(time.Now().Add(time.Millisecond * 50))
+
                 if ackKind == ExpectReAck {
-                    time.Sleep(time.Millisecond * 200)
+                    _, _, err := conn.ReadFrom(tDG.buf)
+
+                    if err == nil {
+                        return fmt.Errorf("%s: received early ACK for block %d", c.name, tDG.block())
+                    }
+
+                    conn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
                 }
 
-                conn.SetReadDeadline(time.Now().Add(time.Millisecond * 50))
                 _, _, err := conn.ReadFrom(tDG.buf)
 
                 if ackKind == NoAck {
