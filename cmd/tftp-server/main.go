@@ -11,7 +11,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/oakdoor/go-tftp/tftp"
 )
@@ -85,7 +84,7 @@ func main() {
 
 	flag.Parse()
 
-	opts := []tftp.ServerOpt{tftp.ServerSinglePort(*singlePortMode), tftp.FullWindowReackDeadline(*fullWindowReAckDeadlineMs)}
+	opts := []tftp.ServerOpt{tftp.ServerSinglePort(*singlePortMode), tftp.FullWindowReAckDeadline(*fullWindowReAckDeadlineMs)}
 
 	server, err := tftp.NewServer(fmt.Sprintf(":%d", *port), opts...)
 	if err != nil {

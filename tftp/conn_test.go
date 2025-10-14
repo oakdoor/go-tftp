@@ -1500,6 +1500,7 @@ func TestConn_parseOptions(t *testing.T) {
 		rx       func() datagram
 		tsize    *int64
 		isSender bool
+		userFullWindowReAckDeadline time.Duration
 
 		expectOptionsParsed bool
 		expectedOptions     options
@@ -1508,6 +1509,7 @@ func TestConn_parseOptions(t *testing.T) {
 		expectedWindowsize  uint16
 		expectedTsize       *int64
 		expectedError       string
+		expectedFullWindowReAckDeadline time.Duration
 	}{
 		{
 			name: "blocksize, valid",
@@ -1543,7 +1545,22 @@ func TestConn_parseOptions(t *testing.T) {
 			expectOptionsParsed: true,
 			expectedTimeout:     3 * time.Second,
 			expectedError:       `^$`,
+			expectedFullWindowReAckDeadline: time.Duration(0.05 * 3 * float64(time.Second)),
 		},
+        {
+            name: "timeout, with user specified deadline",
+            userFullWindowReAckDeadline: 250 * time.Millisecond,
+            rx: func() datagram {
+                dg.writeOptionAck(options{optTimeout: "3"})
+                return dg
+            },
+
+            expectedOptions:     options{optTimeout: "3"},
+            expectOptionsParsed: true,
+            expectedTimeout:     3 * time.Second,
+            expectedError:       `^$`,
+            expectedFullWindowReAckDeadline: 250 * time.Millisecond,
+        },
 		{
 			name: "timeout, invalid",
 			rx: func() datagram {
@@ -1636,6 +1653,7 @@ func TestConn_parseOptions(t *testing.T) {
 			expectedTimeout:     3 * time.Second,
 			expectedTsize:       ptrInt64(1234567890),
 			expectedWindowsize:  16,
+			expectedFullWindowReAckDeadline: time.Duration(0.05 * 3 * float64(time.Second)),
 		},
 		{
 			name: "all options, receive side",
@@ -1659,6 +1677,7 @@ func TestConn_parseOptions(t *testing.T) {
 			expectedTimeout:     3 * time.Second,
 			expectedTsize:       ptrInt64(1234567890),
 			expectedWindowsize:  16,
+			expectedFullWindowReAckDeadline: time.Duration(0.05 * 3 * float64(time.Second)),
 		},
 	}
 
@@ -1667,6 +1686,10 @@ func TestConn_parseOptions(t *testing.T) {
 			tConn := conn{rx: c.rx()}
 			tConn.tsize = c.tsize
 			tConn.isSender = c.isSender
+
+			if c.userFullWindowReAckDeadline != 0 {
+			    tConn.userFullWindowReAckDeadline = &c.userFullWindowReAckDeadline
+			}
 
 			opts, err := tConn.parseOptions()
 
@@ -1703,6 +1726,9 @@ func TestConn_parseOptions(t *testing.T) {
 					t.Errorf("expected tsize to be %d, but it was %d", *c.expectedTsize, *tConn.tsize)
 				}
 			}
+            if tConn.fullWindowReAckDeadline != c.expectedFullWindowReAckDeadline {
+                t.Errorf("expected deadline to be %s, but it was %s", c.expectedFullWindowReAckDeadline, tConn.fullWindowReAckDeadline)
+            }
 		})
 	}
 }

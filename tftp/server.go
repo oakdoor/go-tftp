@@ -349,7 +349,7 @@ func ServerSinglePort(enable bool) ServerOpt {
 	}
 }
 
-func FullWindowReackDeadline(deadlineMs int) ServerOpt {
+func FullWindowReAckDeadline(deadlineMs int) ServerOpt {
 	return func(s *Server) error {
 		if deadlineMs >= 0 {
 			var fullWindowReAckDeadline = new(time.Duration)

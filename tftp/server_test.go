@@ -4,7 +4,10 @@
 
 package tftp
 
-import "testing"
+import (
+    "testing"
+    "time"
+)
 
 func TestNewServer(t *testing.T) {
 	t.Parallel()
@@ -13,11 +16,13 @@ func TestNewServer(t *testing.T) {
 		name string
 		addr string
 		opts []ServerOpt
+		deadlineSet bool
 
 		expectedAddrStr    string
 		expectedNet        string
 		expectedRetransmit int
 		expectedError      error
+		expectedFullWindowReAckDeadline time.Duration
 	}{
 		{
 			name: "default",
@@ -64,6 +69,28 @@ func TestNewServer(t *testing.T) {
 
 			expectedError: ErrInvalidRetransmit,
 		},
+		{
+			name: "reAckDeadline, valid",
+			addr: "",
+			opts: []ServerOpt{
+				FullWindowReAckDeadline(1000),
+			},
+            deadlineSet: true,
+
+			expectedFullWindowReAckDeadline: time.Millisecond * 1000,
+            expectedNet:        "udp",
+            expectedRetransmit: 10,
+		},
+        {
+            name: "reAckDeadline, not set",
+            addr: "",
+            opts: []ServerOpt{
+                FullWindowReAckDeadline(-1),
+            },
+
+            expectedNet:        "udp",
+            expectedRetransmit: 10,
+        },
 	}
 
 	for _, c := range cases {
@@ -93,6 +120,17 @@ func TestNewServer(t *testing.T) {
 			if server.retransmit != c.expectedRetransmit {
 				t.Errorf("expected retransmit to be %d, but it was %d", c.expectedRetransmit, server.retransmit)
 			}
+
+            // Re-Ack FullWindowReAckDeadline
+            if c.deadlineSet {
+                if *server.userFullWindowReAckDeadline != c.expectedFullWindowReAckDeadline {
+                t.Errorf("expected userFullWindowReAckDeadline to be %d, but it was %d", c.expectedFullWindowReAckDeadline, *server.userFullWindowReAckDeadline)
+                }
+            } else {
+                if server.userFullWindowReAckDeadline != nil {
+                    t.Errorf("expected userFullWindowReAckDeadline to be nil but it wasn't")
+                }
+            }
 		})
 	}
 }
