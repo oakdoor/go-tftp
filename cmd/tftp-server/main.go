@@ -5,79 +5,87 @@
 package main
 
 import (
-	"log"
-	"github.com/oakdoor/go-tftp/tftp"
+	"flag"
+	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
-	"fmt"
-	"flag"
+	"time"
+
+	"github.com/oakdoor/go-tftp/tftp"
 )
 
 func Receiver(outputFolder string, atomicSave bool) func(writeRequest tftp.WriteRequest) {
-    return func (writeRequest tftp.WriteRequest) {
-        var filename = writeRequest.Name()
-        var outputFilePath = filepath.Join(outputFolder, filepath.Clean(filename))
+	return func(writeRequest tftp.WriteRequest) {
+		var filename = writeRequest.Name()
+		var outputFilePath = filepath.Join(outputFolder, filepath.Clean(filename))
 
-        if atomicSave {
-            err := writeToFile(dotpath(outputFolder, filename), writeRequest)
-            if err != nil {
-                log.Println(err)
-                writeRequest.WriteError(tftp.ErrCodeAccessViolation, fmt.Sprintf("Cannot write to file %q", outputFilePath))
-                return
-            }
+		if atomicSave {
+			err := writeToFile(dotpath(outputFolder, filename), writeRequest)
+			if err != nil {
+				log.Println(err)
+				writeRequest.WriteError(tftp.ErrCodeAccessViolation, fmt.Sprintf("Cannot write to file %q", outputFilePath))
+				return
+			}
 
-            err = os.Rename(dotpath(outputFolder, filename), outputFilePath)
-            if err != nil {
-                log.Println(err)
-                writeRequest.WriteError(tftp.ErrCodeAccessViolation, fmt.Sprintf("Cannot rename file to %q", outputFilePath))
-            }
-        } else {
-            err := writeToFile(outputFilePath, writeRequest)
+			err = os.Rename(dotpath(outputFolder, filename), outputFilePath)
+			if err != nil {
+				log.Println(err)
+				writeRequest.WriteError(tftp.ErrCodeAccessViolation, fmt.Sprintf("Cannot rename file to %q", outputFilePath))
+			}
+		} else {
+			err := writeToFile(outputFilePath, writeRequest)
 
-            if err != nil {
-                log.Println(err)
-                writeRequest.WriteError(tftp.ErrCodeAccessViolation, fmt.Sprintf("Cannot write to file %q", outputFilePath))
-                return
-            }
-        }
-    }
+			if err != nil {
+				log.Println(err)
+				writeRequest.WriteError(tftp.ErrCodeAccessViolation, fmt.Sprintf("Cannot write to file %q", outputFilePath))
+				return
+			}
+		}
+	}
 }
 
 func dotpath(outputFolder string, filename string) string {
-    return filepath.Join(outputFolder, filepath.Join("." + filepath.Clean(filename)))
+	return filepath.Join(outputFolder, filepath.Join("."+filepath.Clean(filename)))
 }
 
 func writeToFile(fullPath string, writeRequest tftp.WriteRequest) error {
-        file, err := os.Create(fullPath)
+	file, err := os.Create(fullPath)
 
-        if err != nil {
-            log.Println(err)
-            writeRequest.WriteError(tftp.ErrCodeAccessViolation, fmt.Sprintf("Cannot create file %q", fullPath))
-            return err
-        }
+	if err != nil {
+		log.Println(err)
+		writeRequest.WriteError(tftp.ErrCodeAccessViolation, fmt.Sprintf("Cannot create file %q", fullPath))
+		return err
+	}
 
-        defer file.Close()
+	defer file.Close()
 
-        _, err = io.Copy(file, writeRequest)
+	_, err = io.Copy(file, writeRequest)
 
-        if err != nil {
-            log.Println(err)
-            os.Remove(fullPath)
-            writeRequest.WriteError(tftp.ErrCodeAccessViolation, fmt.Sprintf("Cannot write to file %q", fullPath))
-            return err
-        }
-        return err
+	if err != nil {
+		log.Println(err)
+		os.Remove(fullPath)
+		writeRequest.WriteError(tftp.ErrCodeAccessViolation, fmt.Sprintf("Cannot write to file %q", fullPath))
+		return err
+	}
+	return err
 }
 
 func main() {
-    var singlePortMode = flag.Bool("single-port", false, "When set the server will not use standard ephemeral ports for the TFTP transaction, making firewall configuration easier.")
-    var outputFolder = flag.String("output-folder", "output", "The write location of received files.")
-    var port = flag.Int("port", 69, "The UDP port the server will listen on.")
-    var atomicSave = flag.Bool("atomic-save", false, "When set the server will write the message contents to the output file atomically.")
-    flag.Parse()
+	var singlePortMode = flag.Bool("single-port", false, "When set the server will not use standard ephemeral ports for the TFTP transaction, making firewall configuration easier.")
+	var outputFolder = flag.String("output-folder", "output", "The write location of received files.")
+	var port = flag.Int("port", 69, "The UDP port the server will listen on.")
+	var atomicSave = flag.Bool("atomic-save", false, "When set the server will write the message contents to the output file atomically.")
+	var fullWindowReAckDeadlineMs = flag.Int("full-window-reack-deadline-ms", -1,
+		"When a window is re-transmitted by the client, how long (in milliseconds) should the server wait before deciding that the client "+
+			"re-transmitted because the window ACK from the server never arrived (as opposed to being delayed past the retransmit "+
+			"timeout of the client). If this deadline expires, then the server infers that its previous ACK for this window was "+
+			"actually completely lost and it should re-ACK.")
 
-    opts:= []tftp.ServerOpt{tftp.ServerSinglePort(*singlePortMode)}
+	flag.Parse()
+
+	opts := []tftp.ServerOpt{tftp.ServerSinglePort(*singlePortMode), tftp.FullWindowReackDeadline(*fullWindowReAckDeadlineMs)}
 
 	server, err := tftp.NewServer(fmt.Sprintf(":%d", *port), opts...)
 	if err != nil {
