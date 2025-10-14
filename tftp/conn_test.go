@@ -104,8 +104,8 @@ func TestNewConn(t *testing.T) {
             }
 
             // fullWindowReAckDeadline
-            if c.expectedFullWindowReAckDeadline != 0 && c.expectedFullWindowReAckDeadline != *conn.fullWindowReAckDeadline {
-                t.Errorf("expected deadline %s, but it was %s", c.expectedFullWindowReAckDeadline, conn.fullWindowReAckDeadline)
+            if c.expectedFullWindowReAckDeadline != 0 && c.expectedFullWindowReAckDeadline != *conn.userFullWindowReAckDeadline {
+                t.Errorf("expected deadline %s, but it was %s", c.expectedFullWindowReAckDeadline, conn.userFullWindowReAckDeadline)
             }
 
 			conn.Close()
@@ -1255,6 +1255,7 @@ func TestConn_ackDataWindow(t *testing.T) {
 		window          uint16
 		windowsize      uint16
 		catchup         bool
+		fullWindowReAckDeadline time.Duration
 		connFunc        func(*net.UDPConn, *net.UDPAddr, AckKind, uint16) error
 
         blocks     []testBlock
@@ -1415,6 +1416,7 @@ func TestConn_ackDataWindow(t *testing.T) {
             block:      0,
             windowsize: 4,
             window:     0,
+            fullWindowReAckDeadline: time.Millisecond * 100,
             blocks: []testBlock{
                 newTestBlock(1, data),
                 newTestBlock(2, data),
@@ -1445,6 +1447,7 @@ func TestConn_ackDataWindow(t *testing.T) {
             tConn.window = c.window
             tConn.windowsize = c.windowsize
             tConn.catchup = c.catchup
+            tConn.fullWindowReAckDeadline = c.fullWindowReAckDeadline
 
             c.connFunc = func(conn *net.UDPConn, sAddr *net.UDPAddr, ackKind AckKind, expectedAckBlock uint16) error {
                 if ackKind == ExpectReAck {

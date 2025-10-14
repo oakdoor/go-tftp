@@ -33,7 +33,7 @@ var defaultOptions = map[string]string{
 //
 // udpNet is one of "udp", "udp4", or "udp6"
 // addr is the address of the target client or server
-func newConn(udpNet string, mode TransferMode, addr *net.UDPAddr, listenPort int, fullWindowReAckDeadline *time.Duration) (*conn, error) {
+func newConn(udpNet string, mode TransferMode, addr *net.UDPAddr, listenPort int, userFullWindowReAckDeadline *time.Duration) (*conn, error) {
 	// Start listening, an empty UDPAddr will cause the system to assign a port
 	netConn, err := net.ListenUDP(udpNet, &net.UDPAddr{Port: listenPort})
 	if err != nil {
@@ -49,14 +49,14 @@ func newConn(udpNet string, mode TransferMode, addr *net.UDPAddr, listenPort int
 		windowsize: defaultWindowsize,
 		retransmit: defaultRetransmit,
 		mode:       mode,
-		fullWindowReAckDeadline: fullWindowReAckDeadline,
+		userFullWindowReAckDeadline: userFullWindowReAckDeadline,
 	}
 	c.rx.buf = make([]byte, 4+defaultBlksize) // +4 for headers
 
 	return c, nil
 }
 
-func newSinglePortConn(addr *net.UDPAddr, mode TransferMode, netConn *net.UDPConn, reqChan chan []byte, fullWindowReAckDeadline *time.Duration) *conn {
+func newSinglePortConn(addr *net.UDPAddr, mode TransferMode, netConn *net.UDPConn, reqChan chan []byte, userFullWindowReAckDeadline *time.Duration) *conn {
 	return &conn{
 		log:        newLogger(addr.String()),
 		remoteAddr: addr,
@@ -68,7 +68,7 @@ func newSinglePortConn(addr *net.UDPAddr, mode TransferMode, netConn *net.UDPCon
 		buf:        make([]byte, 4+defaultBlksize), // +4 for headers
 		reqChan:    reqChan,
 		netConn:    netConn,
-		fullWindowReAckDeadline: fullWindowReAckDeadline,
+		userFullWindowReAckDeadline: userFullWindowReAckDeadline,
 	}
 }
 
@@ -108,7 +108,8 @@ type conn struct {
 
 	// Other, non-negotiable options
 	retransmit int // Number of times an individual datagram will be retransmitted on error
-	fullWindowReAckDeadline *time.Duration // How long to wait before resending a data ack if server receives repeated block
+	fullWindowReAckDeadline time.Duration // How long to wait before resending a data ack if server receives repeated block
+	userFullWindowReAckDeadline *time.Duration // How long to wait before resending a data ack if server receives repeated block
 
 	// Track state of transfer
 	optionsParsed bool   // Whether TFTP options have been parsed yet
@@ -560,7 +561,7 @@ func (c *conn) ackData() stateType {
         // Received the most recently stored block again
         if c.window == 0 {
             // The repeated block was the same block we previously acked, sender must have missed our ack so ack again
-            c.delayedWindowAckSender = time.AfterFunc(100*time.Millisecond, func() {
+            c.delayedWindowAckSender = time.AfterFunc(c.fullWindowReAckDeadline, func() {
                 c.sendWindowAck()
             })
 		    return c.read
@@ -687,6 +688,11 @@ func (c *conn) parseOptions() (options, error) {
 				return nil, &errParsingOption{option: opt, value: val}
 			}
 			c.timeout = time.Second * time.Duration(seconds)
+			if c.userFullWindowReAckDeadline != nil {
+			    c.fullWindowReAckDeadline = *c.userFullWindowReAckDeadline
+			} else {
+			    c.fullWindowReAckDeadline = time.Duration(0.05 * float64(c.timeout))
+			}
 			ackOpts[opt] = val
 		case optTransferSize:
 			tsize, err := strconv.ParseInt(val, 10, 64)
